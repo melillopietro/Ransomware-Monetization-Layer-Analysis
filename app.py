@@ -444,6 +444,196 @@ Dedup volume: **${ms['dedup_vol']:,.0f}**. Event-level: **${ms['ev_vol']:,.0f}**
         if st.button("GENERATE FULL DATA PACKAGE ZIP", type="primary"):
             buf=io.BytesIO()
             with zipfile.ZipFile(buf,"w",zipfile.ZIP_DEFLATED) as zf:
+                # === GENERATE ALL FIGURES AS PDF (for Overleaf images/ folder) ===
+                plt.style.use("seaborn-v0_8-whitegrid")
+                matplotlib.rcParams.update({"font.size":10,"figure.dpi":300,"savefig.dpi":300,"pdf.fonttype":42,"ps.fonttype":42})
+                fig_names = []
+
+                # Fig1: Temporal Coverage
+                try:
+                    f1,a1=plt.subplots(figsize=(10,4))
+                    rm2=reg_a.set_index("date").resample("M").size()
+                    a1.plot(rm2.index,rm2.values,color="steelblue",label="Disclosure Events")
+                    a1.set_ylabel("Events/month"); a1.set_xlabel("")
+                    ax2=a1.twinx()
+                    tm2=tx_a.set_index("tx_datetime").resample("M").size()
+                    ax2.plot(tm2.index,tm2.values,color="darkorange",alpha=.7,label="Transactions")
+                    ax2.set_ylabel("Transactions/month")
+                    a1.legend(loc="upper left"); ax2.legend(loc="upper right")
+                    a1.set_title("Temporal Coverage — Aligned Analysis Window")
+                    f1.tight_layout()
+                    buf1=io.BytesIO(); f1.savefig(buf1,format="pdf",bbox_inches="tight"); buf1.seek(0)
+                    zf.writestr("images/fig1_temporal_coverage.pdf",buf1.getvalue())
+                    fig_names.append(("fig1_temporal_coverage","Temporal coverage of aligned datasets"))
+                    plt.close(f1)
+                except Exception: pass
+
+                # Fig2: Timing Distribution (histogram)
+                if not mdf6.empty:
+                    try:
+                        f2,a2_=plt.subplots(figsize=(8,4))
+                        a2_.hist(mdf6["days_from_disclosure"].dropna(),bins=60,color="steelblue",alpha=.8,edgecolor="white")
+                        a2_.axvline(0,color="red",ls="--",lw=1.5,label="Disclosure day")
+                        a2_.set_xlabel("Days from Disclosure"); a2_.set_ylabel("Event-TX Pairs")
+                        a2_.set_title("Distribution of Transaction Timing Relative to Disclosure")
+                        a2_.legend(); f2.tight_layout()
+                        buf2=io.BytesIO(); f2.savefig(buf2,format="pdf",bbox_inches="tight"); buf2.seek(0)
+                        zf.writestr("images/fig2_timing_distribution.pdf",buf2.getvalue())
+                        fig_names.append(("fig2_timing_distribution","Histogram of days from disclosure to associated transactions"))
+                        plt.close(f2)
+                    except Exception: pass
+
+                # Fig3: Phase by Actor (top 10)
+                if not mdf6.empty:
+                    try:
+                        pg2=mdf6.groupby(["gang_normalized","temporal_phase"]).size().unstack(fill_value=0)
+                        tp2=pg2.sum(axis=1).nlargest(10).index
+                        f3,a3_=plt.subplots(figsize=(10,5))
+                        pg2.loc[pg2.index.isin(tp2)].plot(kind="barh",stacked=True,ax=a3_)
+                        a3_.set_xlabel("Event-TX Pairs"); a3_.set_title("Temporal Phase Distribution by Actor (Top 10)")
+                        f3.tight_layout()
+                        buf3=io.BytesIO(); f3.savefig(buf3,format="pdf",bbox_inches="tight"); buf3.seek(0)
+                        zf.writestr("images/fig3_phase_by_actor.pdf",buf3.getvalue())
+                        fig_names.append(("fig3_phase_by_actor","Stacked bar: temporal phase distribution per actor"))
+                        plt.close(f3)
+                    except Exception: pass
+
+                # Fig4: Top actors by dedup volume
+                if gm3 is not None and not gm3.empty and "dedup_vol" in gm3.columns:
+                    try:
+                        top15=gm3.nlargest(15,"dedup_vol")
+                        f4,a4_=plt.subplots(figsize=(9,5))
+                        a4_.barh(top15["gang_normalized"],top15["dedup_vol"],color="steelblue")
+                        a4_.set_xlabel("Deduplicated Volume (USD)"); a4_.set_title("Top 15 Actors by Co-occurring Transaction Volume")
+                        a4_.invert_yaxis(); f4.tight_layout()
+                        buf4=io.BytesIO(); f4.savefig(buf4,format="pdf",bbox_inches="tight"); buf4.seek(0)
+                        zf.writestr("images/fig4_top_actors_volume.pdf",buf4.getvalue())
+                        fig_names.append(("fig4_top_actors_volume","Top 15 actors ranked by deduplicated co-occurring volume"))
+                        plt.close(f4)
+                    except Exception: pass
+
+                # Fig5: Sector distribution
+                if not mdf6.empty and "event_sector" in mdf6.columns:
+                    try:
+                        sv2=mdf6.groupby("event_sector")["tx_amountUSD"].sum().nlargest(12).reset_index()
+                        sv2.columns=["sector","usd"]
+                        f5,a5_=plt.subplots(figsize=(9,5))
+                        a5_.barh(sv2["sector"],sv2["usd"],color="teal")
+                        a5_.set_xlabel("Co-occurring Volume (USD)"); a5_.set_title("Sector Concentration of Matched Activity")
+                        a5_.invert_yaxis(); f5.tight_layout()
+                        buf5=io.BytesIO(); f5.savefig(buf5,format="pdf",bbox_inches="tight"); buf5.seek(0)
+                        zf.writestr("images/fig5_sector_volume.pdf",buf5.getvalue())
+                        fig_names.append(("fig5_sector_volume","Sector distribution of co-occurring transaction volume"))
+                        plt.close(f5)
+                    except Exception: pass
+
+                # Fig6: Country distribution
+                if not mdf6.empty and "event_country" in mdf6.columns:
+                    try:
+                        cv2=mdf6.groupby("event_country")["tx_amountUSD"].sum().nlargest(12).reset_index()
+                        cv2.columns=["country","usd"]
+                        f6,a6_=plt.subplots(figsize=(9,5))
+                        a6_.barh(cv2["country"],cv2["usd"],color="darkslateblue")
+                        a6_.set_xlabel("Co-occurring Volume (USD)"); a6_.set_title("Geographic Concentration of Matched Activity")
+                        a6_.invert_yaxis(); f6.tight_layout()
+                        buf6=io.BytesIO(); f6.savefig(buf6,format="pdf",bbox_inches="tight"); buf6.seek(0)
+                        zf.writestr("images/fig6_country_volume.pdf",buf6.getvalue())
+                        fig_names.append(("fig6_country_volume","Geographic distribution of co-occurring transaction volume"))
+                        plt.close(f6)
+                    except Exception: pass
+
+                # Fig7: Sensitivity analysis
+                if sdf2 is not None and not sdf2.empty:
+                    try:
+                        f7,a7_=plt.subplots(figsize=(8,4))
+                        a7_.plot(sdf2["window"],sdf2["pairs"],marker="o",color="steelblue",label="Pairs")
+                        a7_.set_xlabel("Window (days)"); a7_.set_ylabel("Pairs",color="steelblue")
+                        a72=a7_.twinx()
+                        a72.plot(sdf2["window"],sdf2["dedup_vol"],marker="s",color="darkorange",label="Dedup Vol")
+                        a72.set_ylabel("Volume (USD)",color="darkorange")
+                        a7_.set_title("Sensitivity Analysis: Window Size Impact")
+                        a7_.legend(loc="upper left"); a72.legend(loc="upper right"); f7.tight_layout()
+                        buf7=io.BytesIO(); f7.savefig(buf7,format="pdf",bbox_inches="tight"); buf7.seek(0)
+                        zf.writestr("images/fig7_sensitivity.pdf",buf7.getvalue())
+                        fig_names.append(("fig7_sensitivity","Sensitivity of matching results to window size"))
+                        plt.close(f7)
+                    except Exception: pass
+
+                # Fig8: Events vs Volume scatter
+                if gm3 is not None and not gm3.empty:
+                    try:
+                        f8,a8_=plt.subplots(figsize=(8,5))
+                        sc8=a8_.scatter(gm3["matched_events"],gm3["dedup_vol"],s=gm3["wallets"]*20,alpha=.6,c="steelblue",edgecolors="white",lw=.5)
+                        for _,row in gm3.nlargest(5,"dedup_vol").iterrows():
+                            a8_.annotate(row["gang_normalized"],(row["matched_events"],row["dedup_vol"]),fontsize=7,alpha=.8)
+                        a8_.set_xlabel("Matched Events"); a8_.set_ylabel("Deduplicated Volume (USD)")
+                        a8_.set_title("Actor Activity vs Financial Volume (bubble=wallets)"); f8.tight_layout()
+                        buf8=io.BytesIO(); f8.savefig(buf8,format="pdf",bbox_inches="tight"); buf8.seek(0)
+                        zf.writestr("images/fig8_events_vs_volume.pdf",buf8.getvalue())
+                        fig_names.append(("fig8_events_vs_volume","Scatter: matched events vs deduplicated volume, sized by wallet count"))
+                        plt.close(f8)
+                    except Exception: pass
+
+                # Fig9: Wallet reuse top 15
+                if not mdf6.empty:
+                    try:
+                        wr9=mdf6.groupby("wallet_address").agg(evts=("event_date","nunique"),gang=("gang_normalized","first")).sort_values("evts",ascending=False).head(15).reset_index()
+                        wr9["label"]=wr9["wallet_address"].str[:12]+"..."
+                        f9,a9_=plt.subplots(figsize=(9,5))
+                        a9_.barh(wr9["label"],wr9["evts"],color="indianred")
+                        a9_.set_xlabel("Distinct Event Windows"); a9_.set_title("Top 15 Wallets by Event Window Coverage")
+                        a9_.invert_yaxis(); f9.tight_layout()
+                        buf9=io.BytesIO(); f9.savefig(buf9,format="pdf",bbox_inches="tight"); buf9.seek(0)
+                        zf.writestr("images/fig9_wallet_reuse.pdf",buf9.getvalue())
+                        fig_names.append(("fig9_wallet_reuse","Top wallets by number of distinct event windows covered"))
+                        plt.close(f9)
+                    except Exception: pass
+
+                # Fig10: Annual trends
+                if not mdf6.empty:
+                    try:
+                        ann3=mdf6.copy(); ann3["year"]=ann3["event_date"].dt.year
+                        ay2=ann3.groupby("year").agg(events=("event_victim","nunique"),vol=("tx_amountUSD","sum")).reset_index()
+                        f10,a10=plt.subplots(figsize=(8,4))
+                        a10.bar(ay2["year"],ay2["events"],color="steelblue",alpha=.7,label="Events")
+                        a102=a10.twinx()
+                        a102.plot(ay2["year"],ay2["vol"],color="darkorange",marker="o",label="Volume")
+                        a10.set_xlabel("Year"); a10.set_ylabel("Matched Events",color="steelblue")
+                        a102.set_ylabel("Volume (USD)",color="darkorange")
+                        a10.set_title("Annual Matched Activity Trend")
+                        a10.legend(loc="upper left"); a102.legend(loc="upper right"); f10.tight_layout()
+                        buf10=io.BytesIO(); f10.savefig(buf10,format="pdf",bbox_inches="tight"); buf10.seek(0)
+                        zf.writestr("images/fig10_annual_trend.pdf",buf10.getvalue())
+                        fig_names.append(("fig10_annual_trend","Annual trend of matched events and co-occurring volume"))
+                        plt.close(f10)
+                    except Exception: pass
+
+                # Generate LaTeX figures snippet
+                latex_lines = [
+                    "% Auto-generated figure references for Overleaf",
+                    "% Place PDF files in images/ folder",
+                    "% Include with: \input{figures_include.tex}",
+                    ""
+                ]
+                for fname, caption in fig_names:
+                    latex_lines.append(f"\\begin{{figure}}[htbp]")
+                    latex_lines.append(f"  \\centering")
+                    latex_lines.append(f"  \\includegraphics[width=\\textwidth]{{images/{fname}.pdf}}")
+                    latex_lines.append(f"  \\caption{{{caption}}}")
+                    latex_lines.append(f"  \\label{{fig:{fname}}}")
+                    latex_lines.append(f"\\end{{figure}}")
+                    latex_lines.append("")
+                zf.writestr("figures_include.tex","\n".join(latex_lines))
+
+                # Generate figure index for the writing guide
+                fig_index = "FIGURE INDEX\n============\n"
+                for fname, caption in fig_names:
+                    fig_index += f"- {fname}.pdf : {caption}\n"
+                fig_index += f"\nTotal figures: {len(fig_names)}\n"
+                fig_index += "\nAll figures are vector PDF, 300dpi, Type 42 fonts (compatible with IEEE/ACM templates).\n"
+                fig_index += "Place the images/ folder in your Overleaf project root.\n"
+                fig_index += "Use \\input{figures_include.tex} or copy individual \\includegraphics commands.\n"
+                zf.writestr("17_figure_index.txt",fig_index)
                 zf.writestr("01_dataset_stats.json",json.dumps(ds,indent=2,default=str))
                 if not mdf6.empty:
                     zf.writestr("02_matching_stats.json",json.dumps(ms,indent=2,default=str))
@@ -470,7 +660,7 @@ Dedup volume: **${ms['dedup_vol']:,.0f}**. Event-level: **${ms['ev_vol']:,.0f}**
                 zf.writestr("14_normalization_map.csv",ad.to_csv(index=False))
                 meth=f"METHODOLOGY\n===========\nAnalysis period: {ov_s.date()} to {ov_e.date()}\nRegistry full: {r0.date()} to {r1.date()} ({len(reg)} events)\nTransactions full: {t0.date()} to {t1.date()} ({len(tx)} txs)\nAligned: {len(reg_a)} events, {len(tx_a)} txs\nExcluded: {len(reg)-len(reg_a)} events, {len(tx)-len(tx_a)} txs\n\nMatching: pre=30d, post=60d, tol=1d\nPhases: pre_disclosure / same_day / post_disclosure\nVolume types: event_level (with double-counting) vs deduplicated (unique tx hash)\n\nCAUTIONS:\n- No victim-level payment attribution\n- Temporal proximity != causality\n- Actor labels unstable (normalization best-effort)\n- Wallet data incomplete\n- Disclosure date may lag intrusion/negotiation/payment\n- Unmatched actors != no monetization\n- amountUSD depends on historical conversion\n\nTERMINOLOGY (use these):\n- public disclosure event\n- observed disclosure surface\n- actor-associated wallet\n- temporal co-occurrence\n- candidate monetization window\n- financial activity proxy\n- disclosure-to-transaction lag\n\nAVOID:\n- confirmed payment / victim paid\n- causal effect / direct attribution\n- proof of coordination\n\nRQs:\nRQ1: Temporal distribution of TX around disclosures\nRQ2: Recurring financial signatures (timing, volume, wallet reuse, bursts)\nRQ3: Sector/country concentration of matched events\nRQ4: Operational maturity vs TX behavior"
                 zf.writestr("15_methodology.txt",meth)
-                guide=f"PAPER WRITING GUIDE\n===================\nTitle: Following the Money: Temporal Co-occurrence Between Ransomware Disclosures and Actor-Associated Cryptocurrency Transactions\n\nSECTION -> DATA FILE:\n4.2 Data Collection -> 01_dataset_stats.json\n4.3 Preprocessing -> 14_normalization_map.csv\n4.4 Matching Method -> 15_methodology.txt\n5.1 Overview -> 01 + 11 + 12\n5.2 RQ1 (Temporal) -> 02_matching_stats.json + 09_timing_data.csv\n5.3 RQ2 (Gang patterns) -> 04_gang_metrics.csv\n5.4 RQ3 (Sector/Geo) -> 06 + 07\n5.5 Wallet reuse -> 08_wallet_reuse.csv\n5.6 Sensitivity -> 05_sensitivity.csv\n6. Threats -> 15_methodology.txt (CAUTIONS section)\n\nRULES:\n- Every claim must cite specific numbers from files\n- Use cautious language: suggests, indicates, is associated with\n- Distinguish event-level volume from deduplicated volume\n- Acknowledge temporal alignment exclusions\n- Report sensitivity to show robustness"
+                guide=f"PAPER WRITING GUIDE\n===================\nTitle: Following the Money: Temporal Co-occurrence Between Ransomware Disclosures and Actor-Associated Cryptocurrency Transactions\n\nSECTION -> DATA FILE:\n4.2 Data Collection -> 01_dataset_stats.json\n4.3 Preprocessing -> 14_normalization_map.csv\n4.4 Matching Method -> 15_methodology.txt\n5.1 Overview -> 01 + 11 + 12\n5.2 RQ1 (Temporal) -> 02_matching_stats.json + 09_timing_data.csv\n5.3 RQ2 (Gang patterns) -> 04_gang_metrics.csv\n5.4 RQ3 (Sector/Geo) -> 06 + 07\n5.5 Wallet reuse -> 08_wallet_reuse.csv\n5.6 Sensitivity -> 05_sensitivity.csv\n6. Threats -> 15_methodology.txt (CAUTIONS section)\n\nFIGURES (in images/ folder, all vector PDF):\nfig1_temporal_coverage.pdf -> Section 4.2 (Data Collection)\nfig2_timing_distribution.pdf -> Section 5.2 (RQ1)\nfig3_phase_by_actor.pdf -> Section 5.2 (RQ1)\nfig4_top_actors_volume.pdf -> Section 5.3 (RQ2)\nfig5_sector_volume.pdf -> Section 5.4 (RQ3)\nfig6_country_volume.pdf -> Section 5.4 (RQ3)\nfig7_sensitivity.pdf -> Section 5.6 (Robustness)\nfig8_events_vs_volume.pdf -> Section 5.3 (RQ2/RQ4)\nfig9_wallet_reuse.pdf -> Section 5.5 (Wallet Analysis)\nfig10_annual_trend.pdf -> Section 5.1 (Overview)\n\nLaTeX: use figures_include.tex for auto-generated figure environments.\nPlace images/ folder in Overleaf project root.\n\nRULES:\n- Every claim must cite specific numbers from files\n- Use cautious language: suggests, indicates, is associated with\n- Distinguish event-level volume from deduplicated volume\n- Acknowledge temporal alignment exclusions\n- Report sensitivity to show robustness\n- Reference figures using \\ref{{fig:figX_name}}"
                 zf.writestr("16_writing_guide.txt",guide)
             buf.seek(0)
             st.download_button("Download Paper Data Package (ZIP)",buf,"paper_data_package.zip","application/zip")
