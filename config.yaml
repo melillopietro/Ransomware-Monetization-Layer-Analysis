@@ -1,0 +1,58 @@
+# Ransomware Monetization Layer Analysis - Configuration
+# ======================================================
+
+data:
+  excel_path: "./DATASETv3.xlsx"
+  json_path: "./data.json"
+  registry_sheet: "Registry"
+  gang_profile_sheet: "Gang Profile"
+
+normalization:
+  aliases:
+    "netwalker (mailto)": "netwalker"
+    "mailto": "netwalker"
+    "alphv (blackcat)": "alphv"
+    "blackcat": "alphv"
+    "cl0p": "clop"
+    "revil": "revil"
+    "sodinokibi": "revil"
+    "lockbit": "lockbit-family"
+    "lockbit2": "lockbit-family"
+    "lockbit 2.0": "lockbit-family"
+    "lockbit3": "lockbit-family"
+    "lockbit 3.0": "lockbit-family"
+    "lockbit black": "lockbit-family"
+    "lockbit5": "lockbit-family"
+    "black basta": "blackbasta"
+    "blackbasta": "blackbasta"
+    "ransomhub": "ransomhub"
+    "darkvault": "darkvault"
+    "darkside": "darkside"
+    "blackmatter": "blackmatter"
+    "conti": "conti"
+    "ryuk": "ryuk"
+    "maze": "maze"
+    "egregor": "egregor"
+    "avaddon": "avaddon"
+    "babuk": "babuk"
+
+temporal_matching:
+  default_pre_window_days: 30
+  default_post_window_days: 60
+  default_same_day_tolerance_days: 1
+  presets: [7, 14, 30, 60, 90, 120, 180]
+  min_transaction_amount_usd: 0
+
+export:
+  figures_dir: "./exports/figures"
+  tables_dir: "./exports/tables"
+  data_dir: "./exports/data"
+  dpi: 300
+  figure_format: ["png", "pdf"]
+
+style:
+  academic_template: true
+  white_background: true
+  font_family: "serif"
+  title_fontsize: 12
+  axis_fontsize: 10
