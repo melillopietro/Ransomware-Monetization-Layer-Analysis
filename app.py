@@ -372,9 +372,68 @@ Phase: **{ms['pct_pre']}%** pre, **{ms['pct_same']}%** same-day, **{ms['pct_post
 
 Dedup volume: **${ms['dedup_vol']:,.0f}**. Event-level: **${ms['ev_vol']:,.0f}**.""")
 
+            # --- RQ2: Recurring Financial Signatures ---
+            if gm3 is not None and not gm3.empty:
+                top5=gm3.nlargest(5,"dedup_volume_usd")
+                wr_actors=gm3[gm3["wallet_reuse_ratio"]>0.3] if "wallet_reuse_ratio" in gm3.columns else pd.DataFrame()
+                st.subheader("Auto-Narrative (RQ2 - Financial Signatures)")
+                rq2_lines=[f"**{len(gm3)}** actors show measurable transaction co-occurrence."]
+                rq2_lines.append(f"Top 5 by deduplicated volume: {', '.join(top5['gang_normalized'].tolist())} (combined: ${top5['dedup_volume_usd'].sum():,.0f}).")
+                if "median_days_from_disclosure" in gm3.columns:
+                    fast=gm3[gm3["median_days_from_disclosure"]<=3]
+                    slow=gm3[gm3["median_days_from_disclosure"]>30]
+                    rq2_lines.append(f"Timing clusters: **{len(fast)}** actors with median lag <=3d (rapid pattern), **{len(slow)}** with >30d lag (delayed pattern).")
+                if not wr_actors.empty:
+                    rq2_lines.append(f"**{len(wr_actors)}** actors show wallet reuse ratio >0.3, suggesting address recycling across events.")
+                if "burst_score" in gm3.columns:
+                    bursty=gm3[gm3["burst_score"]>gm3["burst_score"].median()]
+                    rq2_lines.append(f"Burst activity: **{len(bursty)}** actors above median burst score, indicating episodic monetization.")
+                st.markdown("\n\n".join(rq2_lines))
+
+            # --- RQ3: Sector/Country Concentration ---
+            if not mdf6.empty:
+                ss_n=mdf6.groupby("event_sector").agg(ev=("event_victim","nunique"),vol=("tx_amountUSD","sum")).sort_values("vol",ascending=False).reset_index()
+                cs_n=mdf6.groupby("event_country").agg(ev=("event_victim","nunique"),vol=("tx_amountUSD","sum")).sort_values("vol",ascending=False).reset_index()
+                st.subheader("Auto-Narrative (RQ3 - Sector & Geographic)")
+                rq3_lines=[]
+                if not ss_n.empty:
+                    top_sec=ss_n.head(3)
+                    top3_pct=round(top_sec["vol"].sum()/ss_n["vol"].sum()*100,1) if ss_n["vol"].sum()>0 else 0
+                    rq3_lines.append(f"Top 3 sectors by co-occurring volume: **{', '.join(top_sec['event_sector'].tolist())}** ({top3_pct}% of total).")
+                    rq3_lines.append(f"Sector spread: **{len(ss_n)}** unique sectors with matched events.")
+                if not cs_n.empty:
+                    top_geo=cs_n.head(3)
+                    geo_pct=round(top_geo["vol"].sum()/cs_n["vol"].sum()*100,1) if cs_n["vol"].sum()>0 else 0
+                    rq3_lines.append(f"Top 3 countries: **{', '.join(top_geo['event_country'].tolist())}** ({geo_pct}% of matched volume).")
+                    rq3_lines.append(f"Geographic spread: **{len(cs_n)}** unique countries.")
+                if rq3_lines: st.markdown("\n\n".join(rq3_lines))
+
+            # --- RQ4: Operational Maturity ---
+            if gm3 is not None and not gm3.empty and "n_events" in gm3.columns:
+                st.subheader("Auto-Narrative (RQ4 - Operational Maturity)")
+                rq4_lines=[]
+                high_vol=gm3.nlargest(5,"n_events")
+                rq4_lines.append(f"Most active actors by matched events: **{', '.join(high_vol['gang_normalized'].tolist())}**.")
+                if "dedup_volume_usd" in gm3.columns and "n_events" in gm3.columns:
+                    gm3["vol_per_event"]=gm3["dedup_volume_usd"]/gm3["n_events"].replace(0,np.nan)
+                    efficient=gm3.nlargest(5,"vol_per_event").dropna(subset=["vol_per_event"])
+                    if not efficient.empty:
+                        rq4_lines.append(f"Highest volume-per-event (monetization efficiency proxy): **{', '.join(efficient['gang_normalized'].tolist())}**.")
+                if "active_days_span" in gm3.columns:
+                    longrun=gm3[gm3["active_days_span"]>365]
+                    rq4_lines.append(f"**{len(longrun)}** actors with >1 year active span (sustained operations).")
+                corr_cols=[c for c in ["n_events","dedup_volume_usd","median_days_from_disclosure"] if c in gm3.columns]
+                if len(corr_cols)>=2:
+                    try:
+                        r,p=stats.spearmanr(gm3["n_events"].fillna(0),gm3["dedup_volume_usd"].fillna(0))
+                        rq4_lines.append(f"Spearman correlation (events vs volume): rho={r:.3f}, p={p:.4f}.")
+                    except: pass
+                if rq4_lines: st.markdown("\n\n".join(rq4_lines))
+
+
         if st.button("GENERATE FULL DATA PACKAGE ZIP", type="primary"):
             buf=io.BytesIO()
-            with zipfile.ZipFile(buf,"w",zipfile.DEFLATED) as zf:
+            with zipfile.ZipFile(buf,"w",zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("01_dataset_stats.json",json.dumps(ds,indent=2,default=str))
                 if not mdf6.empty:
                     zf.writestr("02_matching_stats.json",json.dumps(ms,indent=2,default=str))
